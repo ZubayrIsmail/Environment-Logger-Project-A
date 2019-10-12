@@ -7,14 +7,20 @@
 #include <stdlib.h>
 #include <wiringPiSPI.h>
 #include <time.h>
- 
+#include <math.h>
+#include <stdbool.h>
 #define TRUE                (1==1)
 #define FALSE               (!TRUE)
 #define CHAN_CONFIG_SINGLE  8
 #define CHAN_CONFIG_DIFF    0
- 
+#define PLAY_STOP_BUTTON  4
+#define DISMISS_BUTTON 5
+#define FREQ_BUTTON 6
+long lastInterruptTime = 0; //Button Debounce
+bool playing = FALSE;
+
 static int myFd ;
- 
+ //Function to load drivers for SPI
 void loadSpiDriver()
 {
     if (system("gpio load spi") == -1)
@@ -23,7 +29,8 @@ void loadSpiDriver()
         exit (EXIT_FAILURE) ;
     }
 }
- 
+ //Function to setup the SPI
+
 void spiSetup (int spiChannel)
 {
     if ((myFd = wiringPiSPISetup (spiChannel, 10000)) < 0)
@@ -32,7 +39,7 @@ void spiSetup (int spiChannel)
         exit (EXIT_FAILURE) ;
     }
 }
- 
+ //Function that reads data from the ADC 
 int myAnalogRead(int spiChannel,int channelConfig,int analogChannel)
 {
     if(analogChannel<0 || analogChannel>7)
@@ -43,29 +50,102 @@ int myAnalogRead(int spiChannel,int channelConfig,int analogChannel)
     return ( (buffer[1] & 3 ) << 8 ) + buffer[2]; // get last 10 bits
 }
 
+//convert ADC reading of channel 2 to temperature in celcius
+int temp(int channel){
+    float i = 1023,j=0.01;
+    int temp_reading;
+    temp_reading = (((channel*3.3)/i)-0.5)/j;
+    //temp_reading = round(temp_reading);
+    return temp_reading;
+    
+    }
+ //Convert ADC reading of channel 3 to a voltage
+ 
+ float humidity_voltage_reading(int channel){
+     float i=1023;
+     float voltage =(channel/i)*3.3;
+     
+     return voltage;
+     }   
+     
+void play_stop(void){
+    
+    //Debounce
+    long interruptTime = millis();
 
-
-int main (int argc, char *argv [])
-{
-    int loadSpi=FALSE;
+    if (interruptTime - lastInterruptTime>200){
+        // If playing, pause
+        if (playing == true)
+        {
+            playing = false; // Pause
+	    //printf("Stopped\n");
+        }
+        // Else, if paused, play
+        else
+        {
+            playing = true; // Play
+	   //printf("Play\n");
+        }
+    }
+    lastInterruptTime = interruptTime;
+}
+   
+int setup_gpio(void){
+    //Setting up wiringpi and SPI
     int spiChannel=0;
-    int channelConfig=CHAN_CONFIG_SINGLE;
-
-    if(loadSpi==TRUE)
-        loadSpiDriver();
     wiringPiSetup () ;
     spiSetup(spiChannel);
     
-    int delay_time = 5000;
+    //Setting up the push buttons
+    pinMode(PLAY_STOP_BUTTON , INPUT);
+    pinMode(FREQ_BUTTON, INPUT);
+    pinMode(DISMISS_BUTTON, INPUT);
+    pullUpDnControl(PLAY_STOP_BUTTON , PUD_UP);
+    pullUpDnControl(FREQ_BUTTON, PUD_UP);
+    pullUpDnControl(DISMISS_BUTTON, PUD_UP);
+    
+    
+    //interrupts to Buttons
+    wiringPiISR (PLAY_STOP_BUTTON , INT_EDGE_FALLING,  play_stop);
+    //wiringPiISR (FREQ_BUTTON, INT_EDGE_FALLING,  freq);
+    return 0;
+    }
+int main (int argc, char *argv [])
+{
+    int spiChannel=0;
+    int loadSpi=FALSE;
+    int channelConfig=CHAN_CONFIG_SINGLE;
+    if(loadSpi==TRUE){
+        loadSpiDriver();}
+
+    setup_gpio();
+    int delay_time = 2000;              //can be removed when RTC is implemented 
+    
+    
+    
+    
     while(TRUE){
-        int ldr_adc_ch1 = myAnalogRead(spiChannel,channelConfig,0);
-        int temp_adc_ch2 = myAnalogRead(spiChannel,channelConfig,1);
-        int humidity_adc_ch3 = myAnalogRead(spiChannel,channelConfig,2);
         
-        printf("MCP3008(CE%d): LDR_ADC = %d\n",spiChannel,ldr_adc_ch1);
-        printf("MCP3008(CE%d): temp_ADC = %d\n",spiChannel,temp_adc_ch2);
-        printf("MCP3008(CE%d): humidity_ADC = %d\n",spiChannel,humidity_adc_ch3);
-        delay(delay_time);
+        if(playing ==true){            //only play if button was pressed
+            
+            int ldr_adc_ch1 = myAnalogRead(spiChannel,channelConfig,0);
+            int temp_adc_ch2 = myAnalogRead(spiChannel,channelConfig,1);
+            int humidity_adc_ch3 = myAnalogRead(spiChannel,channelConfig,2);
+            float i = 1023;
+            float dac_out = (ldr_adc_ch1/i)*humidity_voltage_reading(humidity_adc_ch3); //DAC output voltage
+            float humidity_voltage = humidity_voltage_reading(humidity_adc_ch3);
+            
+            printf("---------------------------------------------------------------------\n");
+            printf("RTC Time    Sys Timer   Humidity    Temp    Light   DAC Out     Alarm\n");
+            printf("---------------------------------------------------------------------\n");
+            printf("10:17:12    00:00:00       %.1f       %d      %d      %.1f",humidity_voltage, temp(temp_adc_ch2),ldr_adc_ch1, dac_out );
+            
+            printf("%d\n",temp(temp_adc_ch2));
+            printf("MCP3008(CE%d): LDR_ADC = %d\n",spiChannel,ldr_adc_ch1);
+            printf("MCP3008(CE%d): temp_ADC = %d\n",spiChannel,temp_adc_ch2);
+            printf("MCP3008(CE%d): humidity_ADC = %d\n",spiChannel,humidity_adc_ch3);
+            delay(delay_time);
+            }
     }
 
     close (myFd) ;
