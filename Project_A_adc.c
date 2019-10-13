@@ -67,7 +67,7 @@ int temp(int channel){
      
      return voltage;
      }   
-     
+//Function that checks if the system is logging or not thenchanges the state     
 void play_stop(void){
     
     //Debounce
@@ -127,10 +127,11 @@ int main (int argc, char *argv [])
     while(TRUE){
         
         if(playing ==true){            //only play if button was pressed
-            
+            //read values from each spi channel
             int ldr_adc_ch1 = myAnalogRead(spiChannel,channelConfig,0);
             int temp_adc_ch2 = myAnalogRead(spiChannel,channelConfig,1);
             int humidity_adc_ch3 = myAnalogRead(spiChannel,channelConfig,2);
+            
             float i = 1023;
             float dac_out = (ldr_adc_ch1/i)*humidity_voltage_reading(humidity_adc_ch3); //DAC output voltage
             float humidity_voltage = humidity_voltage_reading(humidity_adc_ch3);
@@ -138,12 +139,8 @@ int main (int argc, char *argv [])
             printf("---------------------------------------------------------------------\n");
             printf("RTC Time    Sys Timer   Humidity    Temp    Light   DAC Out     Alarm\n");
             printf("---------------------------------------------------------------------\n");
-            printf("10:17:12    00:00:00       %.1f       %d      %d      %.1f",humidity_voltage, temp(temp_adc_ch2),ldr_adc_ch1, dac_out );
+            printf("10:17:12    00:00:00       %.1f       %d      %d     %.1f",humidity_voltage, temp(temp_adc_ch2),ldr_adc_ch1, dac_out );
             
-            printf("%d\n",temp(temp_adc_ch2));
-            printf("MCP3008(CE%d): LDR_ADC = %d\n",spiChannel,ldr_adc_ch1);
-            printf("MCP3008(CE%d): temp_ADC = %d\n",spiChannel,temp_adc_ch2);
-            printf("MCP3008(CE%d): humidity_ADC = %d\n",spiChannel,humidity_adc_ch3);
             delay(delay_time);
             }
     }
